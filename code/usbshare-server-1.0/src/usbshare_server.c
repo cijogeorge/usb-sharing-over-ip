@@ -1,0 +1,277 @@
+#include "../inc/usbshare_server.h"
+
+void sigchld_handler(int s)
+{
+ while(wait(NULL) > 0);
+}
+
+int main()  
+{
+ int sockfd, new_fd, ret, i; 
+ sockfd=sock_setup();
+ char temp[MAXDATASIZE];
+ struct sigaction sa;
+ sa.sa_handler = sigchld_handler;
+ sigemptyset(&sa.sa_mask);
+ sa.sa_flags = SA_RESTART;
+ if(sigaction(SIGCHLD, &sa, NULL) == -1)
+ {
+  perror("Server-sigaction() error");
+  exit(1);
+ }
+ while(1)
+ {
+  new_fd=accept_con(sockfd);
+  if(!fork())
+  {
+   close(sockfd);
+   
+   /* GET DEV LST */
+
+   char * devlst=getdevlst(); 
+   send_msg(new_fd, devlst);
+   send_msg(new_fd, itoa(nodevices, 10));
+   strcpy(rbuf,recv_msg(new_fd));
+   strcpy(dir,devices[atoi(rbuf)-1]);
+   strcpy(device,dir);
+   strcpy(tempdir,dir);
+   send_msg(new_fd, device);
+
+   while(1)
+   {
+    strcpy(rbuf,recv_msg(new_fd));
+
+    /* LIST */
+
+    if(!strcmp(rbuf,"list"))
+    {
+     strcpy(rbuf,recv_msg(new_fd));
+     strcpy(tempdir,dir);
+     if(strcmp(rbuf,"."))
+     {
+      sprintf(dir,"%s%s",dir,rbuf);
+     }
+     char * lst=list();
+     send_msg(new_fd, lst);
+     strcpy(dir,tempdir);
+    }
+  
+    /* FREESPACE */
+
+    else if(!strcmp(rbuf,"freespace"))
+    {
+     char *usage=freespace();
+     strcpy(sbuf,usage);
+     send_msg(new_fd, sbuf);
+    }
+
+    /* MAKEDIR */
+    
+    else if(!strcmp(rbuf,"makedir"))
+    {
+     strcpy(rbuf,recv_msg(new_fd));
+     char *path=(char *) malloc(strlen(dir)+strlen(rbuf)+1);
+     sprintf(path,"%s%s",dir,rbuf);
+     ret=makedir(path);
+     if(!ret) 
+      strcpy(sbuf,"Directory created successfully!");
+     else
+      strcpy(sbuf,"Unsuccessful!");
+     send_msg(new_fd, sbuf);
+    }
+   
+    /* RMV */
+
+    else if(!strcmp(rbuf,"rmv"))
+    {
+     strcpy(rbuf,recv_msg(new_fd));
+     char *dirname=(char *) malloc(strlen(dir)+strlen(rbuf)+1);
+     sprintf(dirname,"%s%s",dir,rbuf);
+     ret=rmv(dirname, new_fd);
+     if(!ret) 
+      strcpy(sbuf,"File/Directory removed successfully!");
+     else
+      strcpy(sbuf,"Operation aborted!");
+     send_msg(new_fd, sbuf);
+    }
+ 
+    /* CHDIR */
+
+    else if(!strcmp(rbuf,"chdir"))
+    {
+     strcpy(rbuf,recv_msg(new_fd));
+     int ret=chgdir(rbuf);
+     if(ret) 
+     {
+      strcpy(sbuf, "Invalid operation!"); 
+      send_msg(new_fd, sbuf);
+     }
+     else       
+      send_msg(new_fd, dir);
+    }
+
+    /* CP FILE FROM */
+    
+    else if(!strcmp(rbuf,"cpfilefrom"))
+    {
+     strcpy(rbuf,recv_msg(new_fd));
+     char *path=(char *) malloc(strlen(dir)+strlen(rbuf)+1);
+     sprintf(path,"%s%s",dir,rbuf);
+     ret=copyfilefromusb(path,new_fd);
+     if(!ret) 
+      strcpy(sbuf,"File copied successfully!");
+     else
+      strcpy(sbuf,"Operation aborted!");
+     send_msg(new_fd, sbuf);
+    }
+
+    /* MV FILE FROM */
+
+    else if(!strcmp(rbuf,"mvfilefrom"))
+    {
+     strcpy(rbuf,recv_msg(new_fd));
+     char *path=(char *) malloc(strlen(dir)+strlen(rbuf)+1);
+     sprintf(path,"%s%s",dir,rbuf);
+     ret=movefilefromusb(path,new_fd);
+     if(!ret) 
+      strcpy(sbuf,"File moved successfully!");
+     else
+      strcpy(sbuf,"Operation aborted!");
+     send_msg(new_fd, sbuf);
+    }
+
+    /* CP FILE TO */
+   
+    else if(!strcmp(rbuf,"cpfileto"))
+    {
+     strcpy(tempdir,dir);
+     strcpy(temp,recv_msg(new_fd));
+     strcpy(rbuf,recv_msg(new_fd));
+     if(strcmp(rbuf,".")) sprintf(dir,"%s%s",dir,rbuf);
+     ret=copyfiletousb(temp, dir, new_fd);
+     if(!ret) 
+      strcpy(sbuf,"File copied successfully!");
+     else
+      strcpy(sbuf,"Operation aborted!");
+     send_msg(new_fd, sbuf);
+     strcpy(dir, tempdir);
+    }
+    
+    /* MV FILE TO */
+
+    else if(!strcmp(rbuf,"mvfileto"))
+    {
+     strcpy(tempdir,dir);
+     strcpy(temp,recv_msg(new_fd));
+     strcpy(rbuf,recv_msg(new_fd));
+     if(strcmp(rbuf,".")) sprintf(dir,"%s%s",dir,rbuf);
+     ret=movefiletousb(temp, dir, new_fd);
+     if(!ret) 
+      strcpy(sbuf,"File copied successfully!");
+     else
+      strcpy(sbuf,"Operation aborted!");
+     send_msg(new_fd, sbuf);
+     strcpy(dir, tempdir);
+    }
+     
+    /* CP DIR FROM */
+  
+    else if(!strcmp(rbuf,"cpdirfrom"))
+    {
+     strcpy(rbuf,recv_msg(new_fd));
+     char *path=(char *) malloc(strlen(dir)+strlen(rbuf)+1);
+     sprintf(path,"%s%s",dir,rbuf);
+     ret=copydirfromusb(path,new_fd);
+     if(!ret) 
+      strcpy(sbuf,"Directory copied successfully!");
+     else
+      strcpy(sbuf,"Operation aborted!");
+     send_msg(new_fd, sbuf);
+    }   
+ 
+    /* MV DIR FROM */
+
+    else if(!strcmp(rbuf,"mvdirfrom"))
+    {
+     strcpy(rbuf,recv_msg(new_fd));
+     char *path=(char *) malloc(strlen(dir)+strlen(rbuf)+1);
+     sprintf(path,"%s%s",dir,rbuf);
+     ret=movedirfromusb(path,new_fd);
+     if(!ret) 
+      strcpy(sbuf,"Directory moved successfully!");
+     else
+      strcpy(sbuf,"Operation aborted!");
+     send_msg(new_fd, sbuf);
+    }
+    
+    /* CP DIR TO */
+
+    else if(!strcmp(rbuf,"cpdirto"))
+    {
+     strcpy(tempdir,dir);
+     strcpy(temp,recv_msg(new_fd));
+     strcpy(rbuf,recv_msg(new_fd));
+     if(strcmp(rbuf,".")) sprintf(dir,"%s%s",dir,rbuf);
+     char *path=(char *) malloc(strlen(dir)+strlen(temp)+1);
+     sprintf(path,"%s%s",dir,temp);
+     if(makedir(path)) return 1;
+     ret=copydirtousb(path,new_fd);
+     if(!ret) 
+      strcpy(sbuf,"Directory copied successfully!");
+     else
+      strcpy(sbuf,"Operation aborted!");
+     send_msg(new_fd, sbuf);
+     strcpy(dir, tempdir);
+    }   
+ 
+    /* MVDIRTO */
+
+    else if(!strcmp(rbuf,"mvdirto"))
+    {
+     strcpy(tempdir,dir);
+     strcpy(temp,recv_msg(new_fd));
+     strcpy(rbuf,recv_msg(new_fd));
+     if(strcmp(rbuf,".")) sprintf(dir,"%s%s",dir,rbuf);
+     char *path=(char *) malloc(strlen(dir)+strlen(temp)+1);
+     sprintf(path,"%s%s",dir,temp);
+     if(makedir(path)) return 1;
+     ret=copydirtousb(path,new_fd);
+     if(!ret) 
+      strcpy(sbuf,"Directory moved successfully!");
+     else
+      strcpy(sbuf,"Operation aborted!");
+     send_msg(new_fd, sbuf);
+     strcpy(dir, tempdir);
+    }   
+    
+    /* RENAME */
+
+    else if (!strcmp(rbuf, "rename"))
+    { 
+     char rbuf1[MAXDATASIZE], rbuf2[MAXDATASIZE];
+     strcpy(rbuf1, recv_msg(new_fd));
+     strcpy(rbuf2, recv_msg(new_fd));
+     ret = renamedir(rbuf1 , rbuf2);      
+     if(!ret) 
+      strcpy(sbuf,"File/Directory renamed successfully!");
+     else
+      strcpy(sbuf,"Operation Aborted!"); 
+     send_msg(new_fd, sbuf);
+    }
+    
+    /* QUIT */
+ 
+    else if(!strcmp(rbuf,"quit"))
+    { 
+     close(new_fd); 
+     exit(0);
+    }
+   } 
+   close(new_fd);
+   exit(0);
+  }
+
+  close(new_fd);
+ }
+ return 0;
+}
